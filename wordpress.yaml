@@ -1,0 +1,150 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: wordpress
+  namespace: wordpress
+  labels:
+    app: wordpress
+spec:
+  selector:
+    matchLabels:
+      app: wordpress
+      tier: frontend
+  strategy:
+    type: Recreate
+  template:
+    metadata:
+      labels:
+        app: wordpress
+        tier: frontend
+    spec:
+      containers:
+      - image: wordpress:6
+        name: wordpress
+        resources:
+          requests:
+            cpu: "200m"  # Request 200 milliCPU (0.2 CPU cores)
+            memory: "256Mi"  # Request 256 MiB memory
+          limits:
+            cpu: "500m"  # Limit to 500 milliCPU (0.5 CPU cores)
+            memory: "512Mi"  # Limit to 512 MiB memory
+        env:
+        - name: WORDPRESS_DB_HOST
+          value: mysql-svc.mysql  # mysql-svc.mysql.svc.cluster.local
+        - name: WORDPRESS_DB_PASSWORD
+          valueFrom:
+            secretKeyRef:
+              name: mysql-creds
+              key: mysql-pass
+              
+        - name: WORDPRESS_DB_USER
+          valueFrom:
+             secretKeyRef:
+                name: mysql-creds
+                key: mysql-user
+               
+        ports:
+        - containerPort: 80
+          name: wordpress
+        volumeMounts:
+        - name: wordpress-persistent-storage
+          mountPath: /var/www/html
+      volumes:
+      - name: wordpress-persistent-storage
+        persistentVolumeClaim:
+          claimName: wp-pv-claim
+
+
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: wordpress
+  labels:
+    app: wordpress
+spec:
+  ports:
+    - port: 80
+  selector:
+    app: wordpress
+  type: LoadBalancer
+
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: wp-pv-claim
+  namespace: wordpress
+  labels:
+    app: wordpress
+spec:
+  storageClassName: ebs-sc
+  accessModes:
+    - ReadWriteOnce
+  resources:
+    requests:
+      storage: 100Mi
+
+---
+apiVersion: v1
+kind: Secret
+metadata:
+  name: mysql-creds
+type: Opaque
+data:
+  mysql-pass: QWRtaW4xMjMhJQ==
+  mysql-user: YWRtaW4=
+
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: apache-config
+  namespace: wordpress
+data:
+  custom-apache-config.conf: |
+    # Set the server's fully qualified domain name (FQDN)
+    ServerName www.mywebsite.com
+
+    # # Define the DocumentRoot, where your web content is located
+    # DocumentRoot /var/www/html
+
+    # # Allow directory indexing
+    # <Directory /var/www/html>
+    #     Options Indexes FollowSymLinks
+    #     AllowOverride None
+    #     Require all granted
+    # </Directory>
+
+    # # Logging settings
+    # ErrorLog ${APACHE_LOG_DIR}/error.log
+    # CustomLog ${APACHE_LOG_DIR}/access.log combined
+
+    # # Enable Rewrite Engine for URL rewriting
+    # <Directory /var/www/html>
+    #     Options FollowSymLinks
+    #     AllowOverride All
+    # </Directory>
+
+    # # Enable SSL
+    # SSLEngine on
+    # SSLCertificateFile /etc/ssl/certs/server.crt
+    # SSLCertificateKeyFile /etc/ssl/private/server.key
+
+    # # Set up a virtual host for your website
+    # <VirtualHost *:80>
+    #     ServerName www.mywebsite.com
+    #     DocumentRoot /var/www/html
+
+    #     <Directory /var/www/html>
+    #         Options Indexes FollowSymLinks
+    #         AllowOverride All
+    #         Require all granted
+    #     </Directory>
+    # </VirtualHost>
+
+    # # Redirect HTTP to HTTPS
+    # <VirtualHost *:80>
+    #     ServerName www.mywebsite.com
+    #     Redirect permanent / https://www.mywebsite.com/
+    # </VirtualHost>
